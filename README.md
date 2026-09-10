@@ -17,7 +17,7 @@ ittool++ 新项目初始化骨架。技术栈、主题色、顶栏/页脚与兄�
 | `/` | 首页（产品介绍 + CTA） |
 | `/list` | 分页列表（搜索 / 新建 / 编辑 / 删除 / 批量删除 / 重置示例） |
 
-布局：`AppShell` + `SiteHeader` + `SiteFooter`（含捐助、微信群、ICP）。
+布局：`AppShell` + `SiteHeader` + `SiteFooter`（含赞赏、微信群、ICP）。
 
 ## 快速开始
 

@@ -25,7 +25,7 @@ export function DonateDialog({
       {children ? <DialogTrigger asChild>{children}</DialogTrigger> : null}
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>捐助</DialogTitle>
+          <DialogTitle>赞赏</DialogTitle>
           <DialogDescription>
             如果 {siteConfig.name} 对你有帮助，欢迎扫码支持项目持续维护。
           </DialogDescription>

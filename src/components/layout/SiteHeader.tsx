@@ -80,15 +80,15 @@ export function SiteHeader() {
           <button
             type="button"
             onClick={() => setDonateOpen(true)}
-            aria-label="捐助"
-            title="捐助"
+            aria-label="赞赏"
+            title="赞赏"
             className={cn(
               linkClassName,
               'text-accent size-10 font-semibold hover:bg-accent/15 hover:text-accent-foreground sm:h-auto sm:w-auto',
             )}
           >
             <HeartHandshake className="size-4 shrink-0" aria-hidden />
-            <NavLabel>捐助</NavLabel>
+            <NavLabel>赞赏</NavLabel>
           </button>
         </nav>
       </div>

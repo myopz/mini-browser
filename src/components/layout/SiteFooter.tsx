@@ -163,7 +163,7 @@ export function SiteFooter() {
                 type="button"
                 className="text-accent hover:text-accent-foreground w-fit font-semibold transition-colors"
               >
-                捐助
+                赞赏
               </button>
             </DonateDialog>
           </div>
