@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { SiteHeader } from '@/components/layout/SiteHeader'
+import { AppDock } from '@/components/layout/AppDock'
 
 export function AppShell() {
   return (
@@ -22,6 +23,7 @@ export function AppShell() {
       </div>
 
       <SiteHeader />
+      <AppDock />
 
       <main className="relative z-10 min-w-0 flex-1">
         <Outlet />

@@ -8,17 +8,22 @@ import {
 } from '@/components/ui/dialog'
 import { siteConfig } from '@/config/site'
 
-// 同一天使用同一个标记，防止浏览器缓存旧的微信群二维码图
 const wechatGroupQrSrc = `https://ittoolplus.cn/donate/wechat_group.jpg?${Math.floor(Date.now() / 86400000)}`
 
 type WechatGroupDialogProps = {
-  children: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  children?: React.ReactNode
 }
 
-export function WechatGroupDialog({ children }: WechatGroupDialogProps) {
+export function WechatGroupDialog({
+  open,
+  onOpenChange,
+  children,
+}: WechatGroupDialogProps) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>{children}</DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {children ? <DialogTrigger asChild>{children}</DialogTrigger> : null}
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>微信群聊</DialogTitle>

@@ -120,7 +120,7 @@ export function SiteFooter() {
 
   return (
     <footer className="border-border relative z-10 mt-auto border-t">
-      <div className="mx-auto grid w-full max-w-6xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-4">
+      <div className="grid w-full gap-10 px-4 py-12 sm:px-6 md:grid-cols-4">
         <div>
           <div className="flex items-center gap-2.5">
             <BrandLogo className="size-9" />
@@ -226,7 +226,7 @@ export function SiteFooter() {
       </div>
 
       <div className="border-border border-t">
-        <div className="text-muted-foreground mx-auto flex w-full max-w-6xl flex-col items-center gap-2 px-4 py-5 text-center text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6 sm:text-left">
+        <div className="text-muted-foreground flex w-full flex-col items-center gap-2 px-4 py-5 text-center text-xs sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6 sm:text-left">
           <p className="order-2 sm:order-1 sm:min-w-0">{siteConfig.copyright}</p>
           <span className="order-1 whitespace-nowrap sm:order-2 sm:flex-1 sm:text-center">
             {visitorLabel}
