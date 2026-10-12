@@ -86,3 +86,165 @@
     overflow-x: clip;
   }
 }
+
+/* 顶栏导航岛：iPhone 磨砂玻璃 + Home 键 */
+.header-nav-glass {
+  position: relative;
+  isolation: isolate;
+  border-radius: 9999px;
+  filter:
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.06))
+    drop-shadow(0 4px 12px rgba(0, 0, 0, 0.1));
+}
+
+.header-nav-glass__body {
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+  width: 100%;
+  border-radius: inherit;
+  /* 白底磨砂玻璃，避免整体发灰发黑 */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.96) 0%,
+    rgba(255, 255, 255, 0.92) 50%,
+    rgba(252, 253, 255, 0.94) 100%
+  );
+  border: 0.5px solid rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.05),
+    0 2px 8px rgba(0, 0, 0, 0.06),
+    inset 0 0.5px 0 rgba(255, 255, 255, 1),
+    inset 0 -0.5px 0 rgba(0, 0, 0, 0.03),
+    inset 0 8px 16px rgba(255, 255, 255, 0.55);
+  -webkit-backdrop-filter: blur(24px) saturate(1.35);
+  backdrop-filter: blur(24px) saturate(1.35);
+}
+
+.header-nav-glass__sheen {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  background: linear-gradient(
+    125deg,
+    rgba(255, 255, 255, 0.7) 0%,
+    rgba(255, 255, 255, 0.2) 36%,
+    transparent 58%,
+    rgba(255, 255, 255, 0.25) 100%
+  );
+}
+
+/* 居中项：浅色 Home 键（白银质感，不发黑） */
+.header-nav-home {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background:
+    radial-gradient(
+      120% 100% at 50% 16%,
+      #ffffff 0%,
+      #f8fafc 38%,
+      #f1f5f9 72%,
+      #e8eef4 100%
+    );
+  box-shadow:
+    /* 浅金属外圈 */
+    0 0 0 1.5px #d1d5db,
+    0 0 0 2.5px #ffffff,
+    0 0 0 3px #cbd5e1,
+    /* 轻体积 */
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 2px 6px rgba(0, 0, 0, 0.06),
+    inset 0 1px 1px rgba(255, 255, 255, 1),
+    inset 0 -1.5px 2px rgba(0, 0, 0, 0.05);
+}
+
+.header-nav-home::before {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  top: 12%;
+  left: 16%;
+  width: 56%;
+  height: 36%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.25) 100%
+  );
+}
+
+.header-nav-home--active {
+  box-shadow:
+    0 0 0 1.5px #c4cbd4,
+    0 0 0 2.5px #ffffff,
+    0 0 0 3px #b8c0cc,
+    0 1px 2px rgba(0, 0, 0, 0.1),
+    0 3px 8px rgba(0, 0, 0, 0.08),
+    inset 0 1px 1px rgba(255, 255, 255, 1),
+    inset 0 -1.5px 2px rgba(0, 0, 0, 0.06);
+}
+
+:is(.dark *) .header-nav-glass {
+  filter:
+    drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35))
+    drop-shadow(0 6px 16px rgba(0, 0, 0, 0.4));
+}
+
+:is(.dark *) .header-nav-glass__body {
+  /* 暗色模式也保持偏白玻璃，避免整条发黑 */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(248, 250, 252, 0.82) 50%,
+    rgba(241, 245, 249, 0.86) 100%
+  );
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.2),
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.95),
+    inset 0 8px 18px rgba(255, 255, 255, 0.35);
+}
+
+:is(.dark *) .header-nav-glass__sheen {
+  background: linear-gradient(
+    125deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.12) 34%,
+    transparent 55%,
+    rgba(255, 255, 255, 0.18) 100%
+  );
+}
+
+:is(.dark *) .header-nav-home {
+  background:
+    radial-gradient(
+      120% 100% at 50% 16%,
+      #ffffff 0%,
+      #f8fafc 40%,
+      #eef2f7 75%,
+      #e2e8f0 100%
+    );
+  box-shadow:
+    0 0 0 1.5px #cbd5e1,
+    0 0 0 2.5px #ffffff,
+    0 0 0 3px #94a3b8,
+    0 1px 2px rgba(0, 0, 0, 0.2),
+    0 3px 8px rgba(0, 0, 0, 0.18),
+    inset 0 1px 1px rgba(255, 255, 255, 1),
+    inset 0 -1.5px 2px rgba(0, 0, 0, 0.06);
+}
+
+:is(.dark *) .header-nav-home::before {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.2) 100%
+  );
+}

@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 
 import { BrandLogo } from '@/components/BrandLogo'
+import { HeaderNavCarousel } from '@/components/layout/HeaderNavCarousel'
 import { DonateDialog } from '@/components/DonateDialog'
 import { WechatGzhDialog } from '@/components/WechatGzhDialog'
 import { WechatGroupDialog } from '@/components/WechatGroupDialog'
@@ -33,7 +34,7 @@ import { siteConfig } from '@/config/site'
 import { cn } from '@/lib/utils'
 
 const triggerClassName =
-  'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors sm:px-3'
+  'flex items-center justify-center gap-1.5 rounded-md p-2 text-sm font-medium transition-colors md:px-3 md:py-1.5'
 
 const panelClassName =
   'border-border bg-background absolute top-full right-0 z-50 mt-2 min-w-48 origin-top-right rounded-lg border p-1.5 shadow-lg'
@@ -193,8 +194,8 @@ function AppNavMenu() {
             ? 'bg-secondary/70 text-foreground'
             : 'text-muted-foreground hover:bg-secondary/70 hover:text-foreground',
         )}
-        aria-label={open ? '关闭导航' : '导航'}
-        title={open ? '关闭导航' : '导航'}
+        aria-label={open ? '关闭功能导航' : '功能导航'}
+        title={open ? '关闭功能导航' : '功能导航'}
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => {
@@ -215,7 +216,7 @@ function AppNavMenu() {
         onBlur={() => setTip(null)}
       >
         <ListTree className="size-4 shrink-0" />
-        <span className="hidden sm:inline">导航</span>
+        <span className="hidden md:inline">功能导航</span>
       </button>
       {open ? (
         <div
@@ -223,7 +224,7 @@ function AppNavMenu() {
           role="dialog"
           aria-label="功能导航"
           className={cn(
-            'border-border bg-background absolute top-full right-0 z-50 mt-2 w-56',
+            'border-border bg-background absolute top-full left-0 z-50 mt-2 w-56',
             'rounded-lg border p-2 shadow-lg',
           )}
         >
@@ -265,7 +266,7 @@ function AppNavMenu() {
               className="pointer-events-none fixed z-[200] -translate-x-1/2 rounded-md border border-white/10 bg-neutral-900/95 px-2.5 py-1 text-xs font-medium whitespace-nowrap text-white shadow-lg backdrop-blur-md"
               style={{ left: tip.x, top: tip.y }}
             >
-              {open ? '关闭导航' : '导航'}
+              {open ? '关闭功能导航' : '功能导航'}
             </span>,
             document.body,
           )
@@ -287,15 +288,23 @@ export function SiteHeader() {
         'pt-[env(safe-area-inset-top)]',
       )}
     >
-      <div className="flex h-14 w-full min-w-0 items-center justify-between gap-3 px-3 sm:gap-6 sm:px-6">
-        <a
-          href={siteConfig.homeUrl}
-          className="font-display text-foreground group flex min-w-0 items-center gap-2.5 text-lg font-bold tracking-tight"
-        >
-          <BrandLogo className="size-7 shrink-0 transition-transform group-hover:scale-105 sm:size-8" />
-          <span className="truncate">{siteConfig.name}</span>
-        </a>
-        <nav className="flex min-w-0 shrink-0 items-center gap-0.5 sm:gap-1">
+      <div className="grid h-14 w-full min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-2 sm:gap-6 sm:px-6">
+        <div className="flex min-w-0 items-center justify-start gap-0.5 sm:gap-1">
+          <a
+            href={siteConfig.homeUrl}
+            className="font-display text-foreground group flex min-w-0 shrink-0 flex-col items-center gap-0 leading-none lg:flex-row lg:gap-2 lg:text-lg lg:leading-normal"
+          >
+            <BrandLogo className="size-7 shrink-0 transition-transform group-hover:scale-105 sm:size-8" />
+            <span className="max-w-[4.5rem] truncate text-[10px] font-bold tracking-tight lg:max-w-[9rem] lg:text-lg xl:max-w-none">
+              {siteConfig.name}
+            </span>
+          </a>
+          <AppNavMenu />
+        </div>
+
+        <HeaderNavCarousel />
+
+        <nav className="flex min-w-0 items-center justify-end gap-0 sm:gap-1">
           <NavDropdown
             label="快速链接"
             icon={<Link2 className="size-4 shrink-0" aria-hidden />}
@@ -401,7 +410,6 @@ export function SiteHeader() {
             </button>
           </NavDropdown>
 
-          <AppNavMenu />
         </nav>
       </div>
 

@@ -10,6 +10,10 @@ import { createPortal } from 'react-dom'
 import { NavLink } from 'react-router-dom'
 
 import { appNavItems } from '@/config/appNav'
+import {
+  appNavIconTone,
+  appNavIndicatorClass,
+} from '@/config/appNavIconTone'
 import { cn } from '@/lib/utils'
 
 type DockEdge = 'left' | 'right' | 'top' | 'bottom'
@@ -377,12 +381,11 @@ export function AppDock() {
                 className={({ isActive }) =>
                   cn(
                     'group relative flex size-11 items-center justify-center rounded-[0.9rem]',
-                    'text-foreground/80 transition-[transform,background-color,color,box-shadow] duration-200',
-                    'hover:z-10 hover:scale-125 hover:bg-white/70 hover:text-foreground hover:shadow-md',
+                    'transition-[transform,background-color,box-shadow] duration-200',
+                    'hover:z-10 hover:scale-125 hover:bg-white/70 hover:shadow-md',
                     'dark:hover:bg-white/15',
                     'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
-                    isActive &&
-                      'bg-white/80 text-foreground shadow-sm dark:bg-white/20',
+                    isActive && 'bg-white/80 shadow-sm dark:bg-white/20',
                   )
                 }
                 {...tipHandlers(item.label)}
@@ -393,13 +396,15 @@ export function AppDock() {
                       className={cn(
                         'size-[1.35rem] shrink-0 transition-transform duration-200',
                         'group-hover:scale-105',
+                        appNavIconTone(item.label, isActive),
                       )}
                       strokeWidth={isActive ? 2.25 : 1.9}
                     />
                     <span
                       aria-hidden
                       className={cn(
-                        'rounded-full bg-foreground/80 transition-opacity duration-200',
+                        'rounded-full transition-opacity duration-200',
+                        appNavIndicatorClass(item.label),
                         indicatorClass,
                         isActive ? 'opacity-100' : 'opacity-0',
                       )}
