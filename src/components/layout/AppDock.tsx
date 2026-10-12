@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -7,7 +8,7 @@ import {
   type MouseEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 
 import { appNavItems } from '@/config/appNav'
 import {
@@ -19,6 +20,11 @@ import { cn } from '@/lib/utils'
 type DockEdge = 'left' | 'right' | 'top' | 'bottom'
 
 const DOCK_EDGE_KEY = 'empty-dock-edge'
+/** 可视槽位数（超出则滑动浏览，类似灵动岛窗口） */
+const DOCK_VISIBLE_SLOTS = 8
+/** size-11(44) + gap-1(4) */
+const DOCK_SLOT_PX = 48
+const DOCK_PAD_PX = 12
 const DOCK_EDGES: { edge: DockEdge; label: string }[] = [
   { edge: 'left', label: '左侧' },
   { edge: 'right', label: '右侧' },
@@ -159,17 +165,38 @@ function useDockTip(edge: DockEdge) {
 
 /** 桌面：macOS 风格程序坞（可停靠四边，收入边缘后悬停/点击唤出） */
 export function AppDock() {
+  const { pathname } = useLocation()
   const [edge, setEdge] = useState<DockEdge>(readDockEdge)
   const { tipHandlers, tipPortal } = useDockTip(edge)
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const [canScrollStart, setCanScrollStart] = useState(false)
+  const [canScrollEnd, setCanScrollEnd] = useState(false)
   const hideTimerRef = useRef<number | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const dockNavRef = useRef<HTMLElement>(null)
+  const dockScrollRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const horizontal = edge === 'top' || edge === 'bottom'
+  const needsWindow = appNavItems.length > DOCK_VISIBLE_SLOTS
+  const windowPx = DOCK_VISIBLE_SLOTS * DOCK_SLOT_PX + DOCK_PAD_PX
+
+  const syncScrollEdges = useCallback(() => {
+    const el = dockScrollRef.current
+    if (!el || !needsWindow) {
+      setCanScrollStart(false)
+      setCanScrollEnd(false)
+      return
+    }
+    const start = horizontal ? el.scrollLeft : el.scrollTop
+    const max = horizontal
+      ? el.scrollWidth - el.clientWidth
+      : el.scrollHeight - el.clientHeight
+    setCanScrollStart(start > 2)
+    setCanScrollEnd(max - start > 2)
+  }, [horizontal, needsWindow])
 
   const clearHideTimer = () => {
     if (hideTimerRef.current != null) {
@@ -240,6 +267,65 @@ export function AppDock() {
     document.addEventListener('pointerdown', onPointer)
     return () => document.removeEventListener('pointerdown', onPointer)
   }, [pinned, menuOpen])
+
+  /** 路由变化时把当前项滑入可视窗口 */
+  useEffect(() => {
+    const scroller = dockScrollRef.current
+    if (!scroller || !needsWindow) return
+    const active = scroller.querySelector<HTMLElement>(
+      'a[aria-current="page"]',
+    )
+    active?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: 'smooth',
+    })
+    const t = window.setTimeout(syncScrollEdges, 280)
+    return () => window.clearTimeout(t)
+  }, [pathname, needsWindow, edge, syncScrollEdges])
+
+  useEffect(() => {
+    const el = dockScrollRef.current
+    if (!el || !needsWindow) {
+      setCanScrollStart(false)
+      setCanScrollEnd(false)
+      return
+    }
+    syncScrollEdges()
+    el.addEventListener('scroll', syncScrollEdges, { passive: true })
+    const ro = new ResizeObserver(syncScrollEdges)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', syncScrollEdges)
+      ro.disconnect()
+    }
+  }, [needsWindow, horizontal, open, pinned, syncScrollEdges, edge])
+
+  /** 触控板：主轴滚动映射到坞方向（竖坞也可用横滑） */
+  useEffect(() => {
+    const el = dockScrollRef.current
+    if (!el || !needsWindow) return
+    const onWheel = (event: WheelEvent) => {
+      let dx = event.deltaX
+      let dy = event.deltaY
+      if (event.deltaMode === 1) {
+        dx *= 16
+        dy *= 16
+      } else if (event.deltaMode === 2) {
+        dx *= el.clientWidth
+        dy *= el.clientHeight
+      }
+      const primary = Math.abs(dx) >= Math.abs(dy) ? dx : dy
+      if (primary === 0) return
+      event.preventDefault()
+      if (horizontal) el.scrollLeft += primary
+      else el.scrollTop += primary
+      clearHideTimer()
+      setOpen(true)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [needsWindow, horizontal])
 
   if (appNavItems.length === 0) return null
 
@@ -362,58 +448,101 @@ export function AppDock() {
             openPositionMenu()
           }}
           className={cn(
-            'pointer-events-auto items-center gap-1 rounded-[1.35rem] p-1.5',
-            horizontal ? 'flex flex-row' : 'flex flex-col',
+            'pointer-events-auto relative overflow-hidden rounded-[1.35rem] p-1.5',
             'border border-white/20 bg-white/55 shadow-[0_8px_32px_rgba(0,0,0,0.12)]',
             'supports-[backdrop-filter]:bg-white/40 dark:border-white/10',
             'dark:bg-neutral-900/55 dark:supports-[backdrop-filter]:bg-neutral-900/40',
             'backdrop-blur-2xl backdrop-saturate-150',
           )}
         >
-          {appNavItems.map((item) => {
-            const Icon = item.icon
-            return (
-              <NavLink
-                key={`${item.label}-${item.to}`}
-                to={item.to}
-                end={item.end}
-                aria-label={item.label}
-                className={({ isActive }) =>
-                  cn(
-                    'group relative flex size-11 items-center justify-center rounded-[0.9rem]',
-                    'transition-[transform,background-color,box-shadow] duration-200',
-                    'hover:z-10 hover:scale-125 hover:bg-white/70 hover:shadow-md',
-                    'dark:hover:bg-white/15',
-                    'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
-                    isActive && 'bg-white/80 shadow-sm dark:bg-white/20',
-                  )
-                }
-                {...tipHandlers(item.label)}
-              >
-                {({ isActive }) => (
-                  <>
-                    <Icon
-                      className={cn(
-                        'size-[1.35rem] shrink-0 transition-transform duration-200',
-                        'group-hover:scale-105',
-                        appNavIconTone(item.label, isActive),
-                      )}
-                      strokeWidth={isActive ? 2.25 : 1.9}
-                    />
-                    <span
-                      aria-hidden
-                      className={cn(
-                        'rounded-full transition-opacity duration-200',
-                        appNavIndicatorClass(item.label),
-                        indicatorClass,
-                        isActive ? 'opacity-100' : 'opacity-0',
-                      )}
-                    />
-                  </>
-                )}
-              </NavLink>
-            )
-          })}
+          <div
+            ref={dockScrollRef}
+            className={cn(
+              'items-center gap-1',
+              horizontal ? 'flex flex-row' : 'flex flex-col',
+              needsWindow &&
+                (horizontal
+                  ? 'overflow-x-auto overflow-y-hidden overscroll-x-contain'
+                  : 'overflow-y-auto overflow-x-hidden overscroll-y-contain'),
+              needsWindow &&
+                '[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden',
+            )}
+            style={
+              needsWindow
+                ? horizontal
+                  ? { maxWidth: windowPx }
+                  : { maxHeight: windowPx }
+                : undefined
+            }
+          >
+            {appNavItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <NavLink
+                  key={`${item.label}-${item.to}`}
+                  to={item.to}
+                  end={item.end}
+                  aria-label={item.label}
+                  className={({ isActive }) =>
+                    cn(
+                      'group relative flex size-11 shrink-0 items-center justify-center rounded-[0.9rem]',
+                      'transition-[transform,background-color,box-shadow] duration-200',
+                      'hover:z-10 hover:scale-125 hover:bg-white/70 hover:shadow-md',
+                      'dark:hover:bg-white/15',
+                      'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+                      isActive && 'bg-white/80 shadow-sm dark:bg-white/20',
+                    )
+                  }
+                  {...tipHandlers(item.label)}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <Icon
+                        className={cn(
+                          'size-[1.35rem] shrink-0 transition-transform duration-200',
+                          'group-hover:scale-105',
+                          appNavIconTone(item.label, isActive),
+                        )}
+                        strokeWidth={isActive ? 2.25 : 1.9}
+                      />
+                      <span
+                        aria-hidden
+                        className={cn(
+                          'rounded-full transition-opacity duration-200',
+                          appNavIndicatorClass(item.label),
+                          indicatorClass,
+                          isActive ? 'opacity-100' : 'opacity-0',
+                        )}
+                      />
+                    </>
+                  )}
+                </NavLink>
+              )
+            })}
+          </div>
+
+          {needsWindow && canScrollStart ? (
+            <div
+              aria-hidden
+              className={cn(
+                'pointer-events-none absolute z-[1] from-white/80 to-transparent dark:from-neutral-900/80',
+                horizontal
+                  ? 'inset-y-1.5 left-1.5 w-5 bg-gradient-to-r'
+                  : 'inset-x-1.5 top-1.5 h-5 bg-gradient-to-b',
+              )}
+            />
+          ) : null}
+          {needsWindow && canScrollEnd ? (
+            <div
+              aria-hidden
+              className={cn(
+                'pointer-events-none absolute z-[1] from-white/80 to-transparent dark:from-neutral-900/80',
+                horizontal
+                  ? 'inset-y-1.5 right-1.5 w-5 bg-gradient-to-l'
+                  : 'inset-x-1.5 bottom-1.5 h-5 bg-gradient-to-t',
+              )}
+            />
+          ) : null}
         </nav>
         {tipPortal}
       </aside>
