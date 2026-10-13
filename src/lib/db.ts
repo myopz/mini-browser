@@ -1,32 +1,22 @@
 import Dexie, { type EntityTable } from 'dexie'
 
-import { createSampleItems, isBuiltinSampleId } from '@/lib/item-factory'
-import type { Item } from '@/types/item'
+import { createId } from '@/lib/utils'
+import type { Bookmark, Visit } from '@/types/browser'
 
-/** App-level flags stored in IndexedDB (not localStorage). */
-type MetaRow = { key: string; value: string }
-
-/** 用户主动删除示例后设为 1，阻止自动重新 seed */
-const EXAMPLES_DISMISSED_KEY = 'examples-dismissed'
-/** 旧版 meta key，读取时兼容迁移 */
-const LEGACY_USER_CLEARED_KEY = 'userClearedSample'
+const MAX_HISTORY = 200
 
 class AppDatabase extends Dexie {
-  items!: EntityTable<Item, 'id'>
-  meta!: EntityTable<MetaRow, 'key'>
+  visits!: EntityTable<Visit, 'id'>
+  bookmarks!: EntityTable<Bookmark, 'id'>
 
   constructor() {
-    super('temp-ittoolplus')
+    super('mini-browser')
     this.version(1).stores({
-      items: 'id, updatedAt, title, status',
+      visits: 'id, visitedAt, url',
     })
     this.version(2).stores({
-      items: 'id, updatedAt, title, status',
-      meta: 'key',
-    })
-    this.version(3).stores({
-      items: 'id, updatedAt, title',
-      meta: 'key',
+      visits: 'id, visitedAt, url',
+      bookmarks: 'id, createdAt, url',
     })
   }
 }
@@ -42,128 +32,99 @@ function openDb(): Promise<void> {
   return dbReady
 }
 
-async function getMeta(key: string): Promise<string | undefined> {
-  const row = await db.meta.get(key)
-  return row?.value
-}
-
-async function setMeta(key: string, value: string): Promise<void> {
-  await db.meta.put({ key, value })
-}
-
-async function deleteMeta(key: string): Promise<void> {
-  await db.meta.delete(key)
-}
-
-async function isExamplesDismissed(): Promise<boolean> {
-  const dismissed = (await getMeta(EXAMPLES_DISMISSED_KEY)) === '1'
-  if (dismissed) return true
-  // 兼容旧数据
-  return (await getMeta(LEGACY_USER_CLEARED_KEY)) === '1'
-}
-
-async function markExamplesDismissed(): Promise<void> {
-  await setMeta(EXAMPLES_DISMISSED_KEY, '1')
-  await deleteMeta(LEGACY_USER_CLEARED_KEY)
-}
-
-async function clearExamplesDismissed(): Promise<void> {
-  await deleteMeta(EXAMPLES_DISMISSED_KEY)
-  await deleteMeta(LEGACY_USER_CLEARED_KEY)
-}
-
-export async function listItems(): Promise<Item[]> {
+export async function listRecentVisits(limit = 30): Promise<Visit[]> {
   await openDb()
-  const rows = await db.items.toArray()
-  return rows.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  )
+  return db.visits.orderBy('visitedAt').reverse().limit(limit).toArray()
 }
 
-export async function getItem(id: string): Promise<Item | undefined> {
+export async function listHistory(limit = MAX_HISTORY): Promise<Visit[]> {
   await openDb()
-  return db.items.get(id)
+  return db.visits.orderBy('visitedAt').reverse().limit(limit).toArray()
 }
 
-export async function saveItem(item: Item): Promise<void> {
+/** 记录一次访问；同 URL 更新时间戳，并裁剪超量历史 */
+export async function recordVisit(url: string, title?: string): Promise<void> {
+  const trimmed = url.trim()
+  if (!trimmed || !/^https?:\/\//i.test(trimmed)) return
+
   await openDb()
-  await db.items.put(item)
-}
+  const now = new Date().toISOString()
+  const existing = await db.visits.where('url').equals(trimmed).first()
 
-export async function deleteItem(id: string): Promise<void> {
-  await deleteItems([id])
-}
+  await db.transaction('rw', db.visits, async () => {
+    if (existing) {
+      await db.visits.put({
+        ...existing,
+        title: title?.trim() || existing.title,
+        visitedAt: now,
+      })
+    } else {
+      await db.visits.add({
+        id: createId(),
+        url: trimmed,
+        title: title?.trim() || undefined,
+        visitedAt: now,
+      })
+    }
 
-export async function deleteItems(ids: string[]): Promise<void> {
-  await openDb()
-  const unique = [...new Set(ids)]
-  if (unique.length === 0) return
-
-  const deletedBuiltin = unique.some(isBuiltinSampleId)
-
-  await db.transaction('rw', db.items, db.meta, async () => {
-    await db.items.bulkDelete(unique)
-    if (deletedBuiltin) {
-      await markExamplesDismissed()
+    const overflow = await db.visits
+      .orderBy('visitedAt')
+      .reverse()
+      .offset(MAX_HISTORY)
+      .primaryKeys()
+    if (overflow.length > 0) {
+      await db.visits.bulkDelete(overflow)
     }
   })
 }
 
-/** 首次且用户未清除示例时，补全缺失的内置示例条目 */
-export async function ensureSampleItemsSeeded(): Promise<Item[]> {
+export async function clearHistory(): Promise<void> {
   await openDb()
-  if (await isExamplesDismissed()) {
-    return listItems()
+  await db.visits.clear()
+}
+
+export async function listBookmarks(): Promise<Bookmark[]> {
+  await openDb()
+  return db.bookmarks.orderBy('createdAt').reverse().toArray()
+}
+
+export async function getBookmarkByUrl(url: string): Promise<Bookmark | undefined> {
+  await openDb()
+  return db.bookmarks.where('url').equals(url.trim()).first()
+}
+
+export async function addBookmark(url: string, title?: string): Promise<Bookmark> {
+  const trimmed = url.trim()
+  if (!trimmed || !/^https?:\/\//i.test(trimmed)) {
+    throw new Error('invalid bookmark url')
   }
-
-  const seeds = createSampleItems()
-  const existing = await db.items.bulkGet(seeds.map((item) => item.id))
-  const missing = seeds.filter((_, index) => !existing[index])
-
-  if (missing.length > 0) {
-    await db.items.bulkPut(missing)
+  await openDb()
+  const existing = await db.bookmarks.where('url').equals(trimmed).first()
+  if (existing) {
+    const next = {
+      ...existing,
+      title: title?.trim() || existing.title,
+    }
+    await db.bookmarks.put(next)
+    return next
   }
-
-  return listItems()
+  const row: Bookmark = {
+    id: createId(),
+    url: trimmed,
+    title: title?.trim() || trimmed,
+    createdAt: new Date().toISOString(),
+  }
+  await db.bookmarks.add(row)
+  return row
 }
 
-/** @deprecated 使用 resetSeedExamples */
-export async function seedItemsIfEmpty(seed: () => Item[]): Promise<Item[]> {
-  void seed
-  return ensureSampleItemsSeeded()
-}
-
-/** 恢复内置示例条目，不影响用户自建条目 */
-export async function resetSeedExamples(): Promise<Item[]> {
+export async function removeBookmark(id: string): Promise<void> {
   await openDb()
-  await clearExamplesDismissed()
-
-  const seeds = createSampleItems()
-  const existing = await db.items.bulkGet(seeds.map((item) => item.id))
-
-  await db.items.bulkPut(
-    seeds.map((item, index) => {
-      const prev = existing[index]
-      return prev
-        ? {
-            ...item,
-            createdAt: prev.createdAt,
-            updatedAt: new Date().toISOString(),
-          }
-        : item
-    }),
-  )
-
-  return listItems()
+  await db.bookmarks.delete(id)
 }
 
-/** @deprecated 使用 resetSeedExamples */
-export async function resetToSampleItems(seed: () => Item[]): Promise<Item[]> {
-  void seed
-  return resetSeedExamples()
-}
-
-export async function areExamplesDismissed(): Promise<boolean> {
+export async function removeBookmarkByUrl(url: string): Promise<void> {
   await openDb()
-  return isExamplesDismissed()
+  const existing = await db.bookmarks.where('url').equals(url.trim()).first()
+  if (existing) await db.bookmarks.delete(existing.id)
 }

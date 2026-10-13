@@ -4,16 +4,17 @@ export const OFFICIAL_ORIGIN = 'https://ittoolplus.cn'
 export const siteConfig = {
   name: 'ittool++',
   shortName: 'ittoolplus',
-  productName: 'Demo',
+  productName: '在线浏览器',
   /** 产品页顶栏副文案 */
-  tagline: '新工具项目骨架模板',
+  tagline: '服务器部署的 Web 浏览器，地址栏 + 页面区即可浏览',
   /** 页脚品牌区，与官网一致 */
   brandTagline: '实用工具集，开启美好生活',
   description:
-    '基于 ittool++ 统一技术栈的项目骨架：首页、分页列表、顶栏与页脚。数据保存在浏览器 IndexedDB。',
+    '在网页中像真浏览器一样输入网址并打开页面。页面经嵌入代理加载，数据与最近访问保存在本机 IndexedDB。',
   /** 官网 */
   homeUrl: 'https://ittoolplus.cn/',
   docsUrl: 'https://ittoolplus.cn/docs',
+  currentToolId: 'mini-browser',
   copyright: `© ${new Date().getFullYear()} ittool++`,
   contactName: '张先生',
   contactPhone: '18756922651',

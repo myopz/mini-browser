@@ -1,12 +1,21 @@
-import { Outlet } from 'react-router-dom'
+import { matchPath, Outlet, useLocation } from 'react-router-dom'
 
 import { SiteFooter } from '@/components/layout/SiteFooter'
 import { SiteHeader } from '@/components/layout/SiteHeader'
 import { AppDock } from '@/components/layout/AppDock'
+import { cn } from '@/lib/utils'
 
 export function AppShell() {
+  const { pathname } = useLocation()
+  const isBrowse = Boolean(matchPath({ path: '/browse', end: false }, pathname))
+
   return (
-    <div className="relative flex min-h-svh min-w-0 flex-col overflow-x-clip">
+    <div
+      className={cn(
+        'relative flex min-w-0 flex-col overflow-x-clip',
+        isBrowse ? 'h-svh overflow-hidden' : 'min-h-svh',
+      )}
+    >
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 overflow-hidden"
@@ -25,11 +34,16 @@ export function AppShell() {
       <SiteHeader />
       <AppDock />
 
-      <main className="relative z-10 min-w-0 flex-1">
+      <main
+        className={cn(
+          'relative z-10 min-w-0 flex-1',
+          isBrowse && 'flex min-h-0 flex-col overflow-hidden',
+        )}
+      >
         <Outlet />
       </main>
 
-      <SiteFooter />
+      {isBrowse ? null : <SiteFooter />}
     </div>
   )
 }

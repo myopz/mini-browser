@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils'
 
 type DockEdge = 'left' | 'right' | 'top' | 'bottom'
 
-const DOCK_EDGE_KEY = 'empty-dock-edge'
+const DOCK_EDGE_KEY = 'browser-dock-edge'
 /** 可视槽位数（超出则滑动浏览，类似灵动岛窗口） */
 const DOCK_VISIBLE_SLOTS = 8
 /** size-11(44) + gap-1(4) */

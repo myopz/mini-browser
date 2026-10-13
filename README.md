@@ -1,23 +1,23 @@
-# temp-ittoolplus
+# 在线浏览器（mini-browser）
 
-ittool++ 新项目初始化骨架。技术栈、主题色、顶栏/页脚与兄弟工具站保持一致。
+可部署在服务器上的 Web 版小型浏览器：地址栏 + 页面区。嵌入代理代码在本仓库内，**不依赖** api-ittoolplus。
 
 ## 技术栈
 
 - Vite 8 + React 19 + TypeScript
 - Tailwind CSS 4 + shadcn/ui（new-york）
 - React Router 7
-- Dexie（IndexedDB）
-- Lucide icons
+- Dexie（最近访问）
+- 嵌入代理：`server/embed-proxy.ts`（Node http）
 
-## 已包含页面
+## 页面
 
 | 路由 | 说明 |
 |------|------|
-| `/` | 首页（产品介绍 + CTA） |
-| `/list` | 分页列表（搜索 / 新建 / 编辑 / 删除 / 批量删除 / 重置示例） |
+| `/` | 全屏浏览器：多标签、地址栏、收藏、历史、iframe |
+| `/browse` | 重定向到 `/` |
 
-布局：`AppShell` + `SiteHeader` + `SiteFooter`（含赞赏、微信群、ICP）。
+部署 base：`/browser/`。嵌入代理路径：`/browser-proxy`。
 
 ## 快速开始
 
@@ -26,46 +26,30 @@ pnpm install
 pnpm dev
 ```
 
-默认开发地址基于 Vite `base`：`/demo/`。
+开发地址：`http://localhost:5173/browser/`（端口以终端为准）。  
+本地由 Vite 插件挂载同源 `/browser-proxy`，无需另起进程。
 
-## 拷贝为新项目
-
-```bash
-cp -R temp-ittoolplus your-new-tool
-cd your-new-tool
-```
-
-然后按清单修改：
-
-1. **`package.json`** — `name`
-2. **`vite.config.ts`** — `base`（如 `/your-path/`），并同步 `redirectBaseWithoutSlash`
-3. **`index.html`** — `<title>`
-4. **`src/config/site.ts`** — `productName` / `tagline` / `description`
-5. **`src/lib/db.ts`** — Dexie 数据库名（避免与其他工具冲突）；保留 `meta.examples-dismissed`，用户删除示例后不会自动重种
-6. **`src/types/item.ts` + `src/pages/ListPage.tsx`** — 换成真实业务模型与字段
-
-可选：初始化 git
+若打开 GitHub 等站点出现 `fetch failed` / TLS 证书错误，多半是本机 HTTPS 解密（公司代理/杀软）。开发环境默认已放宽证书校验；也可显式设置：
 
 ```bash
-rm -rf .git   # 若从已有仓库拷出
-git init
+BROWSER_PROXY_INSECURE_TLS=1 pnpm dev
 ```
 
-## 目录结构
+## 生产代理
 
+```bash
+pnpm build
+pnpm start:proxy   # 默认 127.0.0.1:8791，可用 BROWSER_PROXY_PORT 覆盖
 ```
-src/
-  components/layout/   # AppShell / Header / Footer
-  components/ui/       # shadcn 基础组件
-  config/              # site / donate
-  lib/                 # db / pagination / utils
-  pages/               # HomePage / ListPage
-  types/               # 业务类型
-```
+
+Nginx：
+
+- 静态：`config-ittoolplus/conf/apps/browser.conf` → `mini-browser/dist`
+- 代理：`config-ittoolplus/conf/proxy/proxy-browser.conf` → `127.0.0.1:8791`
 
 ## 与官网一致性约定
 
 - 品牌：`BrandLogo` + `siteConfig.name`
 - 字体：DM Sans + Plus Jakarta Sans（见 `src/index.css`）
-- 色板：oklch 青绿强调色，勿改成默认紫系
+- 色板：oklch 青绿强调色
 - 背景：径向光斑 + 细网格（`AppShell`）

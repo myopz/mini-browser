@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import { Home, List } from 'lucide-react'
+import { Globe } from 'lucide-react'
 
 export type AppNavItem = {
   to: string
@@ -10,7 +10,7 @@ export type AppNavItem = {
   match?: (pathname: string) => boolean
 }
 
+/** 全屏浏览器模式无顶栏导航；保留类型供布局组件编译。 */
 export const appNavItems: AppNavItem[] = [
-  { to: '/', label: '首页', end: true, icon: Home },
-  { to: '/list', label: '列表', end: false, icon: List },
+  { to: '/', label: '浏览器', end: true, icon: Globe },
 ]

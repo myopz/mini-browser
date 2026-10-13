@@ -1,5 +1,5 @@
 {
-  "name": "temp-ittoolplus",
+  "name": "mini-browser",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start:proxy": "node --experimental-strip-types server/index.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
