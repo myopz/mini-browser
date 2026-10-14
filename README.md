@@ -19,6 +19,8 @@
 
 部署 base：`/browser/`。嵌入代理路径：`/browser-proxy`。
 
+Cloudflare 部署后可用**远程 Chromium**（Browser Run Live View）：工具栏云图标切换，适合无法 iframe 的站点。需账号开通 Browser Rendering / Browser Run，并注意并发与按时长计费。
+
 ## 快速开始
 
 ```bash

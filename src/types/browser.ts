@@ -3,12 +3,18 @@ export type NavHistory = {
   index: number
 }
 
+/** proxy：同源路径代理 iframe；remote：Cloudflare Browser Run Live View */
+export type BrowseMode = 'proxy' | 'remote'
+
 export type BrowserTab = {
   id: string
   title: string
   url: string
   frameSrc: string
   nav: NavHistory
+  mode?: BrowseMode
+  remoteSessionId?: string
+  remoteError?: string
 }
 
 export type Bookmark = {
@@ -43,5 +49,6 @@ export function createEmptyTab(id: string): BrowserTab {
     url: '',
     frameSrc: '',
     nav: { ...EMPTY_NAV, stack: [] },
+    mode: 'proxy',
   }
 }

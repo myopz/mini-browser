@@ -1,5 +1,6 @@
 /**
  * Cloudflare Worker：
+ * - /api/remote-browse* → Browser Run 远程会话 + Live View
  * - /browser-proxy* → 嵌入代理（与 Node/Vite 同源逻辑）
  * - /browser/* → Vite 静态产物（dist/）
  */
@@ -7,8 +8,12 @@ import {
   PROXY_PATH,
   handleEmbedProxyRequest,
 } from './server/embed-proxy.ts'
+import {
+  handleRemoteBrowse,
+  type RemoteBrowseEnv,
+} from './worker/remote-browse.ts'
 
-interface Env {
+interface Env extends RemoteBrowseEnv {
   ASSETS: Fetcher
 }
 
@@ -53,6 +58,9 @@ async function serveBrowserAssets(
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url)
+
+    const remote = await handleRemoteBrowse(request, env)
+    if (remote) return remote
 
     if (
       url.pathname === PROXY_PATH ||

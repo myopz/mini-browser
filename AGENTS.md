@@ -18,6 +18,10 @@
   - 开发：`vite.embed-proxy.ts` 挂到 Vite
   - 自建生产：`pnpm start:proxy`（默认 `127.0.0.1:8791`）+ nginx `proxy-browser.conf`
   - Cloudflare：`worker.ts` 同源调用 `handleEmbedProxyRequest`，与静态 `/browser/` 同 Worker
+- 远程 Chromium（Cloudflare Browser Run）：工具栏云图标切换
+  - API：`/api/remote-browse/session*`（`worker/remote-browse.ts` + `browser` binding）
+  - 前端：`src/lib/remote-browse.ts`；标签 `mode: 'remote'` 时 iframe 加载 Live View（`mode=tab`）
+  - 本地 Vite 无 Browser binding；需 `wrangler dev` / 部署后才可用
 - **不依赖** `api-ittoolplus` / `/webmark-proxy`
 - 官网注册：home-ittoolplus/src/data/online-tools.ts（工具在线）
 - Nginx：`config-ittoolplus/conf/apps/browser.conf` + `conf/proxy/proxy-browser.conf`

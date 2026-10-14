@@ -33,6 +33,7 @@
     ]
   },
   "devDependencies": {
+    "@cloudflare/puppeteer": "^1.4.0",
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^24.13.3",

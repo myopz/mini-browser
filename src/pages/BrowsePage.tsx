@@ -9,8 +9,10 @@ import {
   ArrowRight,
   Bookmark as BookmarkIcon,
   Clock,
+  Cloud,
   ExternalLink,
   Globe,
+  Loader2,
   RefreshCw,
   Star,
 } from 'lucide-react'
@@ -37,6 +39,12 @@ import {
   toOriginalUrl,
 } from '@/lib/embed-url'
 import { normalizeOmniboxInput } from '@/lib/omnibox'
+import {
+  closeRemoteSession,
+  createRemoteSession,
+  navigateRemoteSession,
+  refreshRemoteLiveView,
+} from '@/lib/remote-browse'
 import { resolvePageUrl } from '@/lib/resolve-url'
 import { urlsRoughlyEqual } from '@/lib/urls'
 import { cn, createId } from '@/lib/utils'
@@ -99,12 +107,14 @@ export function BrowsePage() {
   const [libraryMode, setLibraryMode] = useState<'bookmarks' | 'history'>(
     'bookmarks',
   )
+  const [remoteBusy, setRemoteBusy] = useState(false)
 
   const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map())
   const urlFocusedRef = useRef(false)
   const expectedNavUrlRef = useRef<Map<string, string | null>>(new Map())
   const tabsRef = useRef(tabs)
   const activeTabIdRef = useRef(activeTabId)
+  const remoteBusyRef = useRef(false)
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0]
   const currentUrl = activeTab?.url ?? ''
@@ -199,6 +209,52 @@ export function BrowsePage() {
     }
   }
 
+  async function loadRemoteInTab(tabId: string, normalized: string) {
+    const tab = tabsRef.current.find((t) => t.id === tabId)
+    if (!tab) return
+    if (remoteBusyRef.current) return
+    remoteBusyRef.current = true
+    setRemoteBusy(true)
+    updateTab(tabId, { remoteError: undefined })
+    try {
+      const session = tab.remoteSessionId
+        ? await navigateRemoteSession(tab.remoteSessionId, normalized)
+        : await createRemoteSession(normalized)
+      const title = session.title || titleFromUrl(session.pageUrl || normalized)
+      updateTab(tabId, {
+        mode: 'remote',
+        url: session.pageUrl || normalized,
+        title,
+        frameSrc: session.liveViewUrl,
+        remoteSessionId: session.sessionId,
+        remoteError: undefined,
+      })
+      if (tabId === activeTabIdRef.current) {
+        setUrlDraft(session.pageUrl || normalized)
+        void getBookmarkByUrl(session.pageUrl || normalized).then((b) =>
+          setBookmarked(Boolean(b)),
+        )
+      }
+      void recordVisit(session.pageUrl || normalized, title).then(async () => {
+        setRecent(await listRecentVisits())
+        setHistory(await listHistory())
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '远程浏览启动失败'
+      updateTab(tabId, {
+        mode: 'remote',
+        url: normalized,
+        title: titleFromUrl(normalized),
+        frameSrc: '',
+        remoteError: message,
+      })
+    } finally {
+      remoteBusyRef.current = false
+      setRemoteBusy(false)
+    }
+  }
+
   function loadUrlInTab(
     tabId: string,
     url: string,
@@ -215,8 +271,20 @@ export function BrowsePage() {
     }
 
     const title = titleFromUrl(normalized)
+    if (tab?.mode === 'remote') {
+      updateTab(tabId, { url: normalized, title })
+      void loadRemoteInTab(tabId, normalized)
+      return
+    }
+
     const frameSrc = toEmbedSrc(normalized, tabId)
-    updateTab(tabId, { url: normalized, title, frameSrc })
+    updateTab(tabId, {
+      url: normalized,
+      title,
+      frameSrc,
+      mode: 'proxy',
+      remoteError: undefined,
+    })
     if (tabId === activeTabIdRef.current) {
       setUrlDraft(normalized)
       void getBookmarkByUrl(normalized).then((b) => setBookmarked(Boolean(b)))
@@ -224,6 +292,38 @@ export function BrowsePage() {
     void recordVisit(normalized, title).then(async () => {
       setRecent(await listRecentVisits())
       setHistory(await listHistory())
+    })
+  }
+
+  async function enableRemoteMode() {
+    if (!activeTab) return
+    const url = originalUrl || normalizeOmniboxInput(urlDraft, currentUrl)
+    if (!url || !/^https?:\/\//i.test(url)) {
+      updateTab(activeTab.id, {
+        mode: 'remote',
+        remoteError: '请先输入有效网址，再开启远程浏览',
+      })
+      return
+    }
+    if (activeTab.mode !== 'remote') {
+      updateTab(activeTab.id, { mode: 'remote' })
+    }
+    if (activeTab.mode !== 'remote' || !urlsRoughlyEqual(activeTab.url, url)) {
+      pushNavHistory(activeTab.id, url)
+    }
+    await loadRemoteInTab(activeTab.id, url)
+  }
+
+  async function disableRemoteMode() {
+    if (!activeTab) return
+    const sessionId = activeTab.remoteSessionId
+    if (sessionId) void closeRemoteSession(sessionId)
+    const url = originalUrl
+    updateTab(activeTab.id, {
+      mode: 'proxy',
+      remoteSessionId: undefined,
+      remoteError: undefined,
+      frameSrc: url ? toEmbedSrc(url, activeTab.id) : '',
     })
   }
 
@@ -289,9 +389,9 @@ export function BrowsePage() {
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
-  // sync active iframe location periodically
+  // sync active iframe location periodically（仅路径代理模式）
   useEffect(() => {
-    if (!activeTab?.frameSrc) return
+    if (!activeTab?.frameSrc || activeTab.mode === 'remote') return
     const iframe = iframeRefs.current.get(activeTab.id)
     if (!iframe) return
     const tabId = activeTab.id
@@ -388,6 +488,30 @@ export function BrowsePage() {
 
   function refresh() {
     if (!activeTab?.url) return
+    if (activeTab.mode === 'remote') {
+      if (activeTab.remoteSessionId) {
+        void (async () => {
+          try {
+            setRemoteBusy(true)
+            const session = await refreshRemoteLiveView(activeTab.remoteSessionId!)
+            updateTab(activeTab.id, {
+              frameSrc: session.liveViewUrl,
+              url: session.pageUrl || activeTab.url,
+              title: session.title || activeTab.title,
+              remoteError: undefined,
+            })
+          } catch {
+            // Live View 链接过期时按当前 URL 重新导航
+            await loadRemoteInTab(activeTab.id, activeTab.url)
+          } finally {
+            setRemoteBusy(false)
+          }
+        })()
+        return
+      }
+      void loadRemoteInTab(activeTab.id, activeTab.url)
+      return
+    }
     const win = iframeRefs.current.get(activeTab.id)?.contentWindow
     try {
       win?.location.reload()
@@ -407,6 +531,10 @@ export function BrowsePage() {
   }
 
   function closeTab(id: string) {
+    const closing = tabsRef.current.find((t) => t.id === id)
+    if (closing?.remoteSessionId) {
+      void closeRemoteSession(closing.remoteSessionId)
+    }
     setTabs((prev) => {
       if (prev.length <= 1) {
         const fresh = createEmptyTab(createId())
@@ -598,6 +726,32 @@ export function BrowsePage() {
           <Clock className="size-4" />
         </Button>
 
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className={cn(
+            'size-8 shrink-0',
+            activeTab?.mode === 'remote' && 'text-sky-600',
+          )}
+          title={
+            activeTab?.mode === 'remote'
+              ? '关闭远程 Chromium，改回代理嵌入'
+              : '远程 Chromium（Cloudflare Browser Run，适合无法 iframe 的站点）'
+          }
+          disabled={remoteBusy}
+          onClick={() => {
+            if (activeTab?.mode === 'remote') void disableRemoteMode()
+            else void enableRemoteMode()
+          }}
+        >
+          {remoteBusy ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Cloud className="size-4" />
+          )}
+        </Button>
+
         {originalUrl ? (
           <Button
             type="button"
@@ -613,6 +767,22 @@ export function BrowsePage() {
           </Button>
         ) : null}
       </div>
+
+      {activeTab?.mode === 'remote' && activeTab.frameSrc ? (
+        <div className="border-border bg-sky-50 text-sky-900 flex h-8 shrink-0 items-center justify-between gap-2 border-b px-2 text-xs dark:bg-sky-950/40 dark:text-sky-100">
+          <span className="truncate">
+            远程 Chromium（Cloudflare Live View）· 空闲约 10 分钟后会话会释放
+          </span>
+          <a
+            className="shrink-0 underline-offset-2 hover:underline"
+            href={activeTab.frameSrc}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            新窗口打开
+          </a>
+        </div>
+      ) : null}
 
       {bookmarks.length > 0 ? (
         <div className="border-border bg-muted/20 flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2">
@@ -639,6 +809,50 @@ export function BrowsePage() {
       <div className="relative min-h-0 flex-1 bg-white">
         {tabs.map((tab) => {
           const active = tab.id === activeTabId
+          if (tab.mode === 'remote' && tab.remoteError) {
+            return active ? (
+              <div
+                key={tab.id}
+                className="text-muted-foreground absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center"
+              >
+                <Cloud className="size-10 text-sky-600 opacity-80" />
+                <p className="text-foreground font-display text-lg font-semibold">
+                  远程浏览未能启动
+                </p>
+                <p className="max-w-md text-sm leading-relaxed">{tab.remoteError}</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={remoteBusy}
+                    onClick={() => void enableRemoteMode()}
+                  >
+                    重试远程
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void disableRemoteMode()}
+                  >
+                    改回代理嵌入
+                  </Button>
+                  {tab.frameSrc ? (
+                    <Button type="button" size="sm" variant="outline" asChild>
+                      <a
+                        href={tab.frameSrc}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        新窗口打开 Live View
+                      </a>
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null
+          }
+
           if (!tab.frameSrc) {
             return active ? (
               <div
@@ -651,7 +865,8 @@ export function BrowsePage() {
                     输入网址开始浏览
                   </p>
                   <p className="max-w-sm text-sm leading-relaxed">
-                    支持多标签、收藏与历史。输入域名、完整 URL 或关键词搜索。
+                    默认走同源代理嵌入；遇到无法 iframe 的站点，点工具栏云图标切换远程
+                    Chromium。
                   </p>
                 </div>
                 <div className="flex flex-wrap justify-center gap-2">
@@ -673,7 +888,7 @@ export function BrowsePage() {
 
           return (
             <iframe
-              key={tab.id}
+              key={`${tab.id}:${tab.mode ?? 'proxy'}`}
               ref={(el) => {
                 if (el) iframeRefs.current.set(tab.id, el)
                 else iframeRefs.current.delete(tab.id)
@@ -686,10 +901,23 @@ export function BrowsePage() {
                 active ? 'z-10' : 'pointer-events-none z-0 invisible',
               )}
               referrerPolicy="no-referrer-when-downgrade"
-              sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-same-origin"
+              allow="clipboard-read; clipboard-write; fullscreen"
+              sandbox={
+                tab.mode === 'remote'
+                  ? undefined
+                  : 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-same-origin'
+              }
             />
           )
         })}
+        {remoteBusy && activeTab?.mode === 'remote' ? (
+          <div className="bg-background/60 absolute inset-0 z-20 flex items-center justify-center backdrop-blur-[1px]">
+            <div className="border-border bg-popover flex items-center gap-2 rounded-md border px-4 py-2 text-sm shadow-md">
+              <Loader2 className="size-4 animate-spin text-sky-600" />
+              正在连接远程 Chromium…
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <LibraryDialog
