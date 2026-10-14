@@ -14,9 +14,10 @@
 - 技术栈：Vite + React + TypeScript + Tailwind 4 + shadcn/ui；壳层对齐 `home-ittoolplus`
 - 存储：Dexie IndexedDB（DB 名 `mini-browser`：历史 visits + 收藏 bookmarks；标签会话存 sessionStorage）
 - 路由：`/` 全屏浏览页（多标签 / 收藏 / 历史）；`/browse` 重定向到 `/`
-- 嵌入代理：**本仓库自带**（`server/embed-proxy.ts`）；路径 `/browser-proxy`
+- 嵌入代理：**本仓库自带**（`server/embed-proxy.ts` Fetch 核心 + `embed-proxy-node.ts` Node 适配）；路径 `/browser-proxy`
   - 开发：`vite.embed-proxy.ts` 挂到 Vite
-  - 生产：`pnpm start:proxy`（默认 `127.0.0.1:8791`）+ nginx `proxy-browser.conf`
+  - 自建生产：`pnpm start:proxy`（默认 `127.0.0.1:8791`）+ nginx `proxy-browser.conf`
+  - Cloudflare：`worker.ts` 同源调用 `handleEmbedProxyRequest`，与静态 `/browser/` 同 Worker
 - **不依赖** `api-ittoolplus` / `/webmark-proxy`
 - 官网注册：home-ittoolplus/src/data/online-tools.ts（工具在线）
 - Nginx：`config-ittoolplus/conf/apps/browser.conf` + `conf/proxy/proxy-browser.conf`

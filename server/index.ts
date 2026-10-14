@@ -8,7 +8,7 @@ import {
   applyProxyTlsPolicy,
   handleEmbedProxy,
   PROXY_PATH,
-} from './embed-proxy.ts'
+} from './embed-proxy-node.ts'
 
 const tlsRelaxed = applyProxyTlsPolicy()
 const PORT = Number(process.env.BROWSER_PROXY_PORT || 8791)

@@ -1,5 +1,3 @@
-import type { IncomingMessage, ServerResponse } from 'node:http'
-
 export const PROXY_PATH = '/browser-proxy'
 
 /**
@@ -9,15 +7,18 @@ export const PROXY_PATH = '/browser-proxy'
  * - 未设置时：非 production 默认关闭校验（便于本地开发）
  */
 export function applyProxyTlsPolicy(): boolean {
-  const flag = process.env.BROWSER_PROXY_INSECURE_TLS
+  const env =
+    typeof process !== 'undefined' && process.env ? process.env : undefined
+  if (!env) return false
+  const flag = env.BROWSER_PROXY_INSECURE_TLS
   const relax =
     flag === '1' || flag === 'true'
       ? true
       : flag === '0' || flag === 'false'
         ? false
-        : process.env.NODE_ENV !== 'production'
+        : env.NODE_ENV !== 'production'
   if (relax) {
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+    env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
   }
   return relax
 }
@@ -596,17 +597,14 @@ function entryRedirectHtml(next: string): string {
 }
 
 async function readRequestBody(
-  req: IncomingMessage,
-): Promise<Buffer | undefined> {
-  const method = (req.method ?? 'GET').toUpperCase()
+  request: Request,
+): Promise<Uint8Array | undefined> {
+  const method = request.method.toUpperCase()
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
     return undefined
   }
-  const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-  return Buffer.concat(chunks)
+  const buf = await request.arrayBuffer()
+  return buf.byteLength > 0 ? new Uint8Array(buf) : undefined
 }
 
 /** 把查询参数里的本地 origin 替换成目标站，避免上报接口因 _o=localhost 返回 400 */
@@ -620,18 +618,18 @@ function scrubLocalOriginInUrl(target: URL, localOrigin: string): void {
 }
 
 function scrubLocalOriginInBody(
-  body: Buffer,
+  body: Uint8Array,
   contentType: string | undefined,
   localOrigin: string,
   siteOrigin: string,
-): Buffer {
+): Uint8Array {
   if (!localOrigin || localOrigin === siteOrigin) return body
   if (!contentType || !/json|text|urlencoded|xml|javascript/i.test(contentType)) {
     return body
   }
-  const text = body.toString('utf8')
-  if (!text.includes(localOrigin)) return body
-  return Buffer.from(text.split(localOrigin).join(siteOrigin), 'utf8')
+  const decoded = new TextDecoder().decode(body)
+  if (!decoded.includes(localOrigin)) return body
+  return new TextEncoder().encode(decoded.split(localOrigin).join(siteOrigin))
 }
 
 /** 从浏览器 Referer（代理路径）还原真实页面 URL，供上游 Referer/Origin */
@@ -655,9 +653,9 @@ const BROWSER_LIKE_UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
 /** curl/node 等工具 UA 会被门户（如网易）直接 403，上游探测改用浏览器 UA */
-function resolveUpstreamUserAgent(req: IncomingMessage): string {
-  const ua = req.headers['user-agent']
-  if (typeof ua !== 'string' || !ua.trim()) return BROWSER_LIKE_UA
+function resolveUpstreamUserAgent(request: Request): string {
+  const ua = request.headers.get('user-agent')
+  if (!ua || !ua.trim()) return BROWSER_LIKE_UA
   if (
     /^(?:curl|wget|python-requests|python|Go-http-client|Java|okhttp|node|undici|axios)\b/i.test(
       ua,
@@ -669,24 +667,20 @@ function resolveUpstreamUserAgent(req: IncomingMessage): string {
 }
 
 function buildUpstreamHeaders(
-  req: IncomingMessage,
+  request: Request,
   target: URL,
 ): Record<string, string> {
   // 跨子域 API（如 www.163.com → gw.m.163.com）需要页面 Referer，不能写成 API 自身 origin
   const pageFromReferer = decodeBrowserReferer(
-    typeof req.headers.referer === 'string' ? req.headers.referer : undefined,
+    request.headers.get('referer') ?? undefined,
   )
   const pageOrigin = pageFromReferer?.origin ?? target.origin
   const headers: Record<string, string> = {
-    'user-agent': resolveUpstreamUserAgent(req),
+    'user-agent': resolveUpstreamUserAgent(request),
     accept:
-      typeof req.headers.accept === 'string'
-        ? req.headers.accept
-        : 'text/html,application/xhtml+xml,*/*',
+      request.headers.get('accept') ?? 'text/html,application/xhtml+xml,*/*',
     'accept-language':
-      typeof req.headers['accept-language'] === 'string'
-        ? req.headers['accept-language']
-        : 'zh-CN,zh;q=0.9',
+      request.headers.get('accept-language') ?? 'zh-CN,zh;q=0.9',
     // 伪装成来自浏览中的页面，减少风控 400
     referer: pageFromReferer
       ? `${pageFromReferer.origin}${pageFromReferer.pathname}${pageFromReferer.search}`
@@ -694,19 +688,19 @@ function buildUpstreamHeaders(
     origin: pageOrigin,
   }
 
-  const contentType = req.headers['content-type']
-  if (typeof contentType === 'string') {
+  const contentType = request.headers.get('content-type')
+  if (contentType) {
     headers['content-type'] = contentType
   }
 
-  const contentLength = req.headers['content-length']
-  if (typeof contentLength === 'string') {
+  const contentLength = request.headers.get('content-length')
+  if (contentLength) {
     headers['content-length'] = contentLength
   }
 
   // 浏览器 Cookie 已落在代理域；回传上游以维持登录态 / uid
-  const cookie = req.headers.cookie
-  if (typeof cookie === 'string' && cookie) {
+  const cookie = request.headers.get('cookie')
+  if (cookie) {
     headers.cookie = cookie
   }
 
@@ -714,28 +708,30 @@ function buildUpstreamHeaders(
 }
 
 function applyCorsHeaders(
-  req: IncomingMessage,
-  res: ServerResponse,
+  request: Request,
+  headers: Headers,
   localOrigin: string,
 ): void {
-  const requestOrigin = req.headers.origin
+  const requestOrigin = request.headers.get('origin')
   // sandbox 无 allow-same-origin 时 Origin 为 "null"
   if (requestOrigin === 'null') {
-    res.setHeader('Access-Control-Allow-Origin', 'null')
-  } else if (typeof requestOrigin === 'string' && requestOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', requestOrigin)
+    headers.set('Access-Control-Allow-Origin', 'null')
+  } else if (requestOrigin) {
+    headers.set('Access-Control-Allow-Origin', requestOrigin)
   } else {
-    res.setHeader('Access-Control-Allow-Origin', localOrigin)
+    headers.set('Access-Control-Allow-Origin', localOrigin)
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD')
-  const reqHeaders = req.headers['access-control-request-headers']
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    typeof reqHeaders === 'string' && reqHeaders
-      ? reqHeaders
-      : 'Content-Type, Accept, Accept-Language, X-Requested-With',
+  headers.set(
+    'Access-Control-Allow-Methods',
+    'GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD',
   )
-  res.setHeader('Access-Control-Max-Age', '86400')
+  const reqHeaders = request.headers.get('access-control-request-headers')
+  headers.set(
+    'Access-Control-Allow-Headers',
+    reqHeaders ||
+      'Content-Type, Accept, Accept-Language, X-Requested-With',
+  )
+  headers.set('Access-Control-Max-Age', '86400')
 }
 
 /** 百度统计 / 反作弊等上报接口：代理场景下几乎必然失败，无需真实转发 */
@@ -1661,11 +1657,8 @@ function stripProxyOnlyQuery(target: URL): { paneId: string; force: boolean } {
 }
 
 function resolveTarget(
-  req: IncomingMessage,
-  origin: string,
+  url: URL,
 ): { target: URL; paneId: string; force: boolean } | null {
-  const url = new URL(req.url ?? '/', origin)
-
   if (url.pathname === PROXY_PATH) {
     const raw = url.searchParams.get('url')
     if (!raw) return null
@@ -1692,62 +1685,74 @@ function resolveTarget(
   return { target: parsed, paneId, force }
 }
 
-export async function handleEmbedProxy(
-  req: IncomingMessage,
-  res: ServerResponse,
-): Promise<boolean> {
-  const host = req.headers.host ?? 'localhost'
-  const origin = `${req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'}://${host}`
-  const url = new URL(req.url ?? '/', origin)
+function copyUpstreamHeaders(upstream: Response, out: Headers, finalUrl: URL): void {
+  upstream.headers.forEach((value, key) => {
+    if (HOP_BY_HOP.has(key.toLowerCase())) return
+    if (key.toLowerCase() === 'set-cookie') return
+    out.set(key, value)
+  })
+  const setCookies =
+    typeof upstream.headers.getSetCookie === 'function'
+      ? upstream.headers.getSetCookie()
+      : []
+  for (const cookie of setCookies) {
+    out.append('Set-Cookie', rewriteSetCookieForProxy(cookie, finalUrl))
+  }
+  out.delete('X-Frame-Options')
+  out.delete('Content-Security-Policy')
+  out.set('X-Embed-Proxy', '1')
+}
+
+/**
+ * Fetch API 版嵌入代理（Cloudflare Worker / 任何 Web 标准运行时可直接用）。
+ * 非 /browser-proxy 路径返回 null。
+ */
+export async function handleEmbedProxyRequest(
+  request: Request,
+): Promise<Response | null> {
+  const url = new URL(request.url)
+  const origin = url.origin
 
   if (
     url.pathname !== PROXY_PATH &&
     !url.pathname.startsWith(`${PROXY_PATH}/`)
   ) {
-    return false
+    return null
   }
 
-  const resolved = resolveTarget(req, origin)
+  const resolved = resolveTarget(url)
   if (!resolved) {
-    res.statusCode = 400
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8')
-    res.end('无效的嵌入地址')
-    return true
+    return new Response('无效的嵌入地址', {
+      status: 400,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
   }
 
   const { target, paneId, force } = resolved
-  const method = (req.method ?? 'GET').toUpperCase()
+  const method = request.method.toUpperCase()
+  const corsHeaders = new Headers()
 
-  // 预检
   if (method === 'OPTIONS') {
-    res.statusCode = 204
-    applyCorsHeaders(req, res, origin)
-    res.end()
-    return true
+    applyCorsHeaders(request, corsHeaders, origin)
+    return new Response(null, { status: 204, headers: corsHeaders })
   }
 
-  // 统计/反作弊上报在代理环境下常被上游拒绝（400），直接吞掉避免控制台刷屏
   if (isIgnorableBeacon(target)) {
-    res.statusCode = 204
-    applyCorsHeaders(req, res, origin)
-    res.setHeader('X-Embed-Proxy', 'beacon-skipped')
-    res.end()
-    return true
+    applyCorsHeaders(request, corsHeaders, origin)
+    corsHeaders.set('X-Embed-Proxy', 'beacon-skipped')
+    return new Response(null, { status: 204, headers: corsHeaders })
   }
 
   try {
     scrubLocalOriginInUrl(target, origin)
-    const rawBody = await readRequestBody(req)
-    const contentType =
-      typeof req.headers['content-type'] === 'string'
-        ? req.headers['content-type']
-        : undefined
+    const rawBody = await readRequestBody(request)
+    const contentType = request.headers.get('content-type') ?? undefined
     const body =
       rawBody && rawBody.length > 0
         ? scrubLocalOriginInBody(rawBody, contentType, origin, target.origin)
         : undefined
 
-    const upstreamHeaders = buildUpstreamHeaders(req, target)
+    const upstreamHeaders = buildUpstreamHeaders(request, target)
     if (body && !upstreamHeaders['content-length']) {
       upstreamHeaders['content-length'] = String(body.length)
     }
@@ -1760,7 +1765,7 @@ export async function handleEmbedProxy(
         method === 'GET' || method === 'HEAD'
           ? undefined
           : body && body.length > 0
-            ? new Uint8Array(body)
+            ? body
             : undefined,
     })
 
@@ -1769,11 +1774,6 @@ export async function handleEmbedProxy(
     const csp = upstream.headers.get('content-security-policy')
     const finalUrl = new URL(upstream.url)
 
-    // 入口文档：
-    // - 默认可 iframe 的普通站点 → 路径代理
-    // - module SPA / 多子域门户且允许嵌入 → 直嵌原站（路径代理必坏）
-    // - 风控页 → 失败页（可强制代理 / 打开原站）
-    // - 禁止嵌入的站点 → 仍走路径代理尝试
     const isEntryDocument =
       url.pathname === PROXY_PATH &&
       method === 'GET' &&
@@ -1787,29 +1787,30 @@ export async function handleEmbedProxy(
         frameBlocked,
         force,
       )
+      const headers = new Headers({
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      })
+      applyCorsHeaders(request, headers, origin)
       if (unsupported) {
         const forceHref = `${PROXY_PATH}?url=${encodeURIComponent(finalUrl.href)}&force=1${
           paneId ? `&paneId=${encodeURIComponent(paneId)}` : ''
         }`
-        res.statusCode = 422
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.setHeader('Cache-Control', 'no-store')
-        res.setHeader('X-Embed-Proxy', 'unsupported')
-        applyCorsHeaders(req, res, origin)
-        res.end(unsupportedEmbedHtml(finalUrl, unsupported, undefined, forceHref))
-        return true
+        headers.set('X-Embed-Proxy', 'unsupported')
+        return new Response(
+          unsupportedEmbedHtml(finalUrl, unsupported, undefined, forceHref),
+          { status: 422, headers },
+        )
       }
       if (!force && shouldDirectEmbedOrigin(html, finalUrl, frameBlocked)) {
         const embedHref = preferHttpsHref(finalUrl)
-        res.statusCode = 200
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.setHeader('Cache-Control', 'no-store')
-        res.setHeader('X-Embed-Proxy', 'direct')
+        headers.set('X-Embed-Proxy', 'direct')
         const risk = proxyEmbedRiskHint(finalUrl, html, frameBlocked)
-        if (risk) res.setHeader('X-Embed-Proxy-Risk', risk)
-        applyCorsHeaders(req, res, origin)
-        res.end(directEmbedOpeningHtml(embedHref, paneId))
-        return true
+        if (risk) headers.set('X-Embed-Proxy-Risk', risk)
+        return new Response(directEmbedOpeningHtml(embedHref, paneId), {
+          status: 200,
+          headers,
+        })
       }
 
       let next = toProxyPath(finalUrl.href)
@@ -1819,23 +1820,10 @@ export async function handleEmbedProxy(
       if (force) {
         next += `${next.includes('?') ? '&' : '?'}force=1`
       }
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      res.setHeader('Cache-Control', 'no-store')
       const risk = proxyEmbedRiskHint(finalUrl, html, frameBlocked)
-      if (risk) res.setHeader('X-Embed-Proxy-Risk', risk)
-      applyCorsHeaders(req, res, origin)
-      res.end(entryRedirectHtml(next))
-      return true
+      if (risk) headers.set('X-Embed-Proxy-Risk', risk)
+      return new Response(entryRedirectHtml(next), { status: 200, headers })
     }
-
-    res.statusCode = upstream.status
-
-    // undici 的 Headers.forEach 会跳过 set-cookie，需单独处理并去掉 Domain
-    const setCookies =
-      typeof upstream.headers.getSetCookie === 'function'
-        ? upstream.headers.getSetCookie()
-        : []
 
     if (responseType.includes('text/html')) {
       const html = await upstream.text()
@@ -1851,102 +1839,85 @@ export async function handleEmbedProxy(
         const forceHref = `${forcePath}${forcePath.includes('?') ? '&' : '?'}force=1${
           paneId ? `&paneId=${encodeURIComponent(paneId)}` : ''
         }`
-        res.statusCode = 422
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.setHeader('Cache-Control', 'no-store')
-        res.setHeader('X-Embed-Proxy', 'unsupported')
-        applyCorsHeaders(req, res, origin)
-        res.end(unsupportedEmbedHtml(finalUrl, unsupported, undefined, forceHref))
-        return true
-      }
-
-      // 书签/历史可能已是路径代理 URL；可嵌的多子域站改直嵌，避免白屏
-      if (!force && shouldDirectEmbedOrigin(html, finalUrl, frameBlocked)) {
-        const embedHref = preferHttpsHref(finalUrl)
-        res.statusCode = 200
-        res.setHeader('Content-Type', 'text/html; charset=utf-8')
-        res.setHeader('Cache-Control', 'no-store')
-        res.setHeader('X-Embed-Proxy', 'direct')
-        const risk = proxyEmbedRiskHint(finalUrl, html, frameBlocked)
-        if (risk) res.setHeader('X-Embed-Proxy-Risk', risk)
-        applyCorsHeaders(req, res, origin)
-        res.end(directEmbedOpeningHtml(embedHref, paneId))
-        return true
-      }
-
-      upstream.headers.forEach((value, key) => {
-        if (HOP_BY_HOP.has(key.toLowerCase())) return
-        if (key.toLowerCase() === 'set-cookie') return
-        res.setHeader(key, value)
-      })
-      if (setCookies.length > 0) {
-        res.setHeader(
-          'Set-Cookie',
-          setCookies.map((c) => rewriteSetCookieForProxy(c, finalUrl)),
+        const headers = new Headers({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Embed-Proxy': 'unsupported',
+        })
+        applyCorsHeaders(request, headers, origin)
+        return new Response(
+          unsupportedEmbedHtml(finalUrl, unsupported, undefined, forceHref),
+          { status: 422, headers },
         )
       }
-      res.removeHeader('X-Frame-Options')
-      res.removeHeader('Content-Security-Policy')
-      res.setHeader('X-Embed-Proxy', '1')
+
+      if (!force && shouldDirectEmbedOrigin(html, finalUrl, frameBlocked)) {
+        const embedHref = preferHttpsHref(finalUrl)
+        const headers = new Headers({
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Embed-Proxy': 'direct',
+        })
+        const risk = proxyEmbedRiskHint(finalUrl, html, frameBlocked)
+        if (risk) headers.set('X-Embed-Proxy-Risk', risk)
+        applyCorsHeaders(request, headers, origin)
+        return new Response(directEmbedOpeningHtml(embedHref, paneId), {
+          status: 200,
+          headers,
+        })
+      }
+
+      const headers = new Headers()
+      copyUpstreamHeaders(upstream, headers, finalUrl)
       const risk = proxyEmbedRiskHint(finalUrl, html, frameBlocked)
-      if (risk) res.setHeader('X-Embed-Proxy-Risk', risk)
-      applyCorsHeaders(req, res, origin)
-      res.setHeader('Content-Type', 'text/html; charset=utf-8')
-      res.end(rewriteHtml(html, finalUrl, paneId))
-      return true
+      if (risk) headers.set('X-Embed-Proxy-Risk', risk)
+      applyCorsHeaders(request, headers, origin)
+      headers.set('Content-Type', 'text/html; charset=utf-8')
+      return new Response(rewriteHtml(html, finalUrl, paneId), {
+        status: upstream.status,
+        headers,
+      })
     }
 
-    upstream.headers.forEach((value, key) => {
-      if (HOP_BY_HOP.has(key.toLowerCase())) return
-      if (key.toLowerCase() === 'set-cookie') return
-      res.setHeader(key, value)
-    })
-    if (setCookies.length > 0) {
-      res.setHeader(
-        'Set-Cookie',
-        setCookies.map((c) => rewriteSetCookieForProxy(c, finalUrl)),
-      )
-    }
-
-    res.removeHeader('X-Frame-Options')
-    res.removeHeader('Content-Security-Policy')
-    res.setHeader('X-Embed-Proxy', '1')
-    applyCorsHeaders(req, res, origin)
+    const headers = new Headers()
+    copyUpstreamHeaders(upstream, headers, finalUrl)
+    applyCorsHeaders(request, headers, origin)
 
     if (
       responseType.includes('text/css') ||
       responseType.includes('javascript') ||
       responseType.includes('ecmascript')
     ) {
-      let text = await upstream.text()
+      let textBody = await upstream.text()
       if (responseType.includes('text/css')) {
-        text = rewriteCssUrls(text, finalUrl)
+        textBody = rewriteCssUrls(textBody, finalUrl)
       } else {
-        text = rewriteHostLockJavaScript(text)
+        textBody = rewriteHostLockJavaScript(textBody)
       }
-      res.setHeader('Content-Type', responseType)
-      res.end(text)
-      return true
+      headers.set('Content-Type', responseType)
+      return new Response(textBody, { status: upstream.status, headers })
     }
 
-    const buffer = Buffer.from(await upstream.arrayBuffer())
-    res.setHeader('Content-Type', responseType)
-    res.end(buffer)
-    return true
+    headers.set('Content-Type', responseType)
+    return new Response(await upstream.arrayBuffer(), {
+      status: upstream.status,
+      headers,
+    })
   } catch (error) {
-    res.statusCode = 502
-    res.setHeader('Content-Type', 'text/html; charset=utf-8')
+    const headers = new Headers({
+      'Content-Type': 'text/html; charset=utf-8',
+    })
     if (proxyTlsRelaxed) {
-      res.setHeader('X-Embed-Proxy-Tls', 'insecure')
+      headers.set('X-Embed-Proxy-Tls', 'insecure')
     }
-    applyCorsHeaders(req, res, origin)
-    res.end(
+    applyCorsHeaders(request, headers, origin)
+    return new Response(
       unsupportedEmbedHtml(
         target,
         formatUpstreamFetchError(error),
         '嵌入代理失败',
       ),
+      { status: 502, headers },
     )
-    return true
   }
 }

@@ -6,7 +6,7 @@ import type { Plugin } from 'vite'
 import {
   applyProxyTlsPolicy,
   handleEmbedProxy,
-} from './server/embed-proxy.ts'
+} from './server/embed-proxy-node.ts'
 
 export {
   PROXY_PATH,
